@@ -3,6 +3,6 @@ module.exports = {
     headless: true,
     defaultViewport: null,
     args: ["--start-maximized"],
-    // slowMo: 500,
+    slowMo: 5000,
   },
 };

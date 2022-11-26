@@ -1,4 +1,4 @@
-const { Given, When, Then, And, Before, After } = require("cucumber");
+const { Given, When, Then, Before, After } = require("cucumber");
 const puppeteer = require("puppeteer");
 const { expect, assert } = require("chai");
 const {
@@ -7,11 +7,16 @@ const {
   selectHall,
 } = require("../../lib/commands.js");
 
+let rows = [];
+let places = [];
+
 Before(async function () {
-  const browser = await puppeteer.launch({ headless: false }, { slowMo: 50 });
+  const browser = await puppeteer.launch({ headless: false }, { slowMo: 5000 });
   const page = await browser.newPage();
   this.browser = browser;
   this.page = page;
+  rows = [];
+  places = [];
 });
 
 After(async function () {
@@ -21,68 +26,77 @@ After(async function () {
 });
 
 Given("user is on {string} page", { timeout: 60000 }, async function (page) {
-  return await this.page.goto(page, { setTimeout: 30000 });
+  const currentPage = await this.page.goto(page, { setTimeout: 60000 });
+  this.page.reload();
+  return currentPage;
 });
 
 When(
-  "user selects hall {string}, row {int}, place {int} and plus {int} days from the current date",
+  "user selects plus {int} days from the current date",
   { timeout: 60000 },
-  async function (hall, row, place, day) {
-    let testHall = await selectHall(hall);
-    const firstSeat = [row, place];
-    const firstSeatSelector = `.buying-scheme__row:nth-child(${firstSeat[0]})>.buying-scheme__chair:nth-child(${firstSeat[1]})`;
-    await this.page.reload();
+  async function (day) {
     await clickElement(this.page, `a:nth-child(${day + 1})`);
-    await clickElement(this.page, testHall);
-    await clickElement(this.page, firstSeatSelector);
-    await clickElement(this.page, ".acceptin-button");
-    await this.page.waitForSelector(".ticket__check-title");
-    await clickElement(this.page, "button[onclick]");
   }
 );
 
+When("selects hall {string}", { timeout: 60000 }, async function (hall) {
+  let testHall = await selectHall(hall);
+  await clickElement(this.page, testHall);
+});
+
 When(
-  "user selects hall {string}, row {int} / place {int} and row {int} / place {int}, plus {int} days from the current date",
-  async function (hall, row1, place1, row2, place2, day) {
-    let testHall = await selectHall(hall);
-    const firstSeat = [row1, place1];
-    const firstSeatSelector = `.buying-scheme__row:nth-child(${firstSeat[0]})>.buying-scheme__chair:nth-child(${firstSeat[1]})`;
-    const secondSeat = [row2, place2];
-    const secondSeatSelector = `.buying-scheme__row:nth-child(${secondSeat[0]})>.buying-scheme__chair:nth-child(${secondSeat[1]})`;
-    await this.page.reload();
-    await clickElement(this.page, `a:nth-child(${day + 1})`);
-    await clickElement(this.page, testHall);
-    await clickElement(this.page, firstSeatSelector);
-    await clickElement(this.page, secondSeatSelector);
-    await clickElement(this.page, ".acceptin-button");
-    await this.page.waitForSelector(".ticket__check-title");
-    await clickElement(this.page, "button[onclick]");
-    const ticketInfo = await extractText(this.page, "p:nth-child(2) > span");
-    expect(ticketInfo).contain(
-      `${firstSeat[0]}/${firstSeat[1]}, ${secondSeat[0]}/${secondSeat[1]}`
-    );
+  "selects row {int} / place {int}",
+  { timeout: 60000 },
+  async function (row, place) {
+    rows.push(row);
+    places.push(place);
+    const seat = [row, place];
+    const seatSelector = `.buying-scheme__row:nth-child(${seat[0]})>.buying-scheme__chair:nth-child(${seat[1]})`;
+    await clickElement(this.page, seatSelector);
+  }
+);
+
+When("click button - Забронировать", { timeout: 60000 }, async function () {
+  await clickElement(this.page, ".acceptin-button");
+  await this.page.waitForSelector(".ticket__check-title");
+  await clickElement(this.page, "button[onclick]");
+  await this.page.waitForSelector(".ticket__check-title");
+});
+
+Then("order completed, text appears {string}", async function (string) {
+  let expectedTicketInfo = "";
+  for (let i = 0; i < rows.length && i < places.length; i++) {
+    if (rows.length === i + 1 && places.length === i + 1) {
+      expectedTicketInfo += rows[i] + "/" + places[i];
+    } else {
+      expectedTicketInfo += rows[i] + "/" + places[i] + ", ";
+    }
+  }
+  const actualTicketInfo = await extractText(
+    this.page,
+    "p:nth-child(2) > span"
+  );
+  expect(actualTicketInfo).contain(expectedTicketInfo);
+  const actual = await extractText(this.page, "p:nth-child(7)");
+  expect(actual).contain(string);
+});
+
+When(
+  "user again is on {string} page",
+  { timeout: 60000 },
+  async function (page) {
+    await this.page.goto(page, { setTimeout: 60000 });
+    this.page.reload();
   }
 );
 
 Then(
-  "trying to place the same order: hall {string}, row {int} / place {int}, plus {int} days from the current date, order uncompleted",
-  async function (hall, row, place, day) {
-    page2 = await this.browser.newPage();
-    await page2.goto("http://qamid.tmweb.ru", { setTimeout: 30000 });
-    await page2.reload();
-    let testHall = await selectHall(hall);
-    const firstSeat = [row, place];
-    const firstSeatSelector = `.buying-scheme__row:nth-child(${firstSeat[0]})>.buying-scheme__chair:nth-child(${firstSeat[1]})`;
-    await clickElement(page2, `a:nth-child(${day + 1})`);
-    await clickElement(page2, testHall);
-    await clickElement(page2, firstSeatSelector);
-    const buttonDisabled = await page2.$("button.acceptin-button[disabled]");
+  "button - Забронировать is not active, order uncompleted",
+  { timeout: 60000 },
+  async function () {
+    const buttonDisabled = await this.page.$(
+      "button.acceptin-button[disabled]"
+    );
     assert.isNotNull(buttonDisabled);
-    await page2.close();
   }
 );
-
-Then("order completed, text appears {string}", async function (string) {
-  const actual = await extractText(this.page, "p:nth-child(7)");
-  expect(actual).contain(string);
-});
